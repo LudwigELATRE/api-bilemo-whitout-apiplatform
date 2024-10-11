@@ -1,0 +1,18 @@
+version: '3'
+
+services:
+  database:
+    container_name: bilemo_database
+    image: 'mariadb:latest'
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: bilemo
+    ports:
+      - '3306:3306'
+    volumes:
+      - database_data:/var/lib/postgresql/data:rw
+
+volumes:
+  ###> doctrine/doctrine-bundle ###
+  database_data:
+###< doctrine/doctrine-bundle ###
