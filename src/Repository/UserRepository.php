@@ -36,7 +36,7 @@ class UserRepository extends ServiceEntityRepository implements PasswordUpgrader
     public function findAllUsersByEnterpriseId(int $enterpriseId): array
     {
         return $this->createQueryBuilder('p')
-            ->andWhere('p.Enterprise = :enterpriseId') // Utilisez le nom de la propriété en majuscule
+            ->andWhere('p.enterprise = :enterpriseId') // Utilisez le nom de la propriété en majuscule
             ->setParameter('enterpriseId', $enterpriseId)
             ->getQuery()
             ->getResult();

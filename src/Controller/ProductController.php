@@ -72,6 +72,74 @@ class ProductController extends AbstractController
     }
 
     /**
+     * @OA\Get(
+     *   tags={"Product"},
+     *   path="/api/product/{uuid}/{productId}",
+     *   summary="Get a specific product by enterprise UUID and product ID",
+     *   description="Retrieve a specific product for a given enterprise UUID and product ID.",
+     *   @OA\Parameter(
+     *     name="uuid",
+     *     in="path",
+     *     required=true,
+     *     description="The UUID of the enterprise.",
+     *     @OA\Schema(type="string")
+     *   ),
+     *   @OA\Parameter(
+     *     name="productId",
+     *     in="path",
+     *     required=true,
+     *     description="The ID of the product.",
+     *     @OA\Schema(type="integer")
+     *   ),
+     *   @OA\Response(
+     *     response=200,
+     *     description="Returns a specific product.",
+     *     @OA\JsonContent(
+     *       @OA\Property(property="id", type="integer"),
+     *       @OA\Property(property="name", type="string"),
+     *       @OA\Property(property="description", type="string"),
+     *       @OA\Property(property="createdAt", type="string", format="date-time"),
+     *       @OA\Property(property="updatedAt", type="string", format="date-time"),
+     *       @OA\Property(property="available", type="boolean")
+     *     )
+     *   ),
+     *   @OA\Response(
+     *     response=404,
+     *     description="Product not found."
+     *   )
+     * )
+     */
+    #[Route('/product/{uuid}/{productId}', name: 'product', methods: ['GET'])]
+    public function getProduct(string $uuid, int $productId): JsonResponse
+    {
+        $enterprise = $this->enterpriseRepository->findOneBy(['uuid' => $uuid]);
+        if (!$enterprise) {
+            return $this->json(['error' => 'Enterprise not found.'], 404);
+        }
+
+        $product = $this->productRepository->findOneBy([
+            'id' => $productId,
+            'enterprise' => $enterprise->getId(),
+        ]);
+
+        if (!$product) {
+            return $this->json(['error' => 'Product not found.'], 404);
+        }
+
+        $data = [
+            'id' => $product->getId(),
+            'name' => $product->getName(),
+            'description' => $product->getDescription(),
+            'createdAt' => $product->getCreatedAt(),
+            'updatedAt' => $product->getUpdatedAt(),
+            'available' => $product->isAvailable(),
+        ];
+
+        return $this->json($data);
+    }
+
+
+    /**
      * @OA\Post(
      *   tags={"Product"},
      *   path="/api/products/enregistrer",
@@ -103,30 +171,5 @@ class ProductController extends AbstractController
         $data = ['id' => 3, 'name' => 'Product 3', 'price' => 300];
 
         return $this->json($data, 201);
-    }
-
-    /**
-     * @OA\Delete(
-     *   tags={"Product"},
-     *   path="/api/products/{id}",
-     *   summary="Delete a product",
-     *   description="Delete an existing product.",
-     *   @OA\Parameter(
-     *     name="id",
-     *     in="path",
-     *     required=true,
-     *     description="The ID of the product",
-     *     @OA\Schema(type="integer")
-     *   ),
-     *   @OA\Response(
-     *     response=204,
-     *     description="Product deleted successfully."
-     *   )
-     * )
-     */
-    #[Route('/{id}', name: 'delete_product', methods: ['DELETE'])]
-    public function deleteProduct(int $id): JsonResponse
-    {
-        return $this->json(null, 204);
     }
 }
