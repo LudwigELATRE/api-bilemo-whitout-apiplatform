@@ -30,7 +30,7 @@ class Product
     private ?bool $available = null;
 
     #[ORM\ManyToOne(inversedBy: 'products')]
-    private ?Enterprise $Enterprise = null;
+    private ?Enterprise $enterprise = null;
 
     public function getId(): ?int
     {
@@ -99,12 +99,12 @@ class Product
 
     public function getEnterprise(): ?Enterprise
     {
-        return $this->Enterprise;
+        return $this->enterprise;
     }
 
-    public function setEnterprise(?Enterprise $Enterprise): self
+    public function setEnterprise(?Enterprise $enterprise): self
     {
-        $this->Enterprise = $Enterprise;
+        $this->enterprise = $enterprise;
 
         return $this;
     }

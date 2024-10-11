@@ -5,14 +5,15 @@ namespace App\Controller;
 use App\Entity\Enterprise;
 use App\Repository\EnterpriseRepository;
 use Doctrine\ORM\EntityManagerInterface;
+use JsonException;
 use Ramsey\Uuid\Uuid;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Annotation\Route;
-use OpenApi\Annotations as OA;
+use OpenApi\Attributes as OA;
 use Nelmio\ApiDocBundle\Annotation\Model;
-use Nelmio\ApiDocBundle\Controller\SwaggerUiController as SWG;
+use Nelmio\ApiDocBundle\Annotation\Security;
 use Symfony\Component\Routing\Requirement\Requirement;
 
 class EnterpriseController extends AbstractController
@@ -26,33 +27,30 @@ class EnterpriseController extends AbstractController
         $this->entityManager = $entityManager;
 
     }
-    /**
-     * @SWG\Tag(name="Enterprise")
-     */
-    /**
-     * @OA\Get(
-     *   tags={"Enterprise"},
-     *   path="/api/enterprise/{uuid}",
-     *   summary="Get enterprise with uuid",
-     *   description="Retrieve an enterprise by its uuid.",
-     *   @OA\Response(
-     *     response=200,
-     *     description="Returns the enterprise details.",
-     *     @OA\JsonContent(
-     *       type="object",
-     *       @OA\Property(property="id", type="integer"),
-     *       @OA\Property(property="name", type="string"),
-     *       @OA\Property(property="uuid", type="string")
-     *     )
-     *   ),
-     *   @OA\Response(
-     *     response=404,
-     *     description="Enterprise not found"
-     *   )
-     * )
-     */
 
-    #[Route('/enterprise/{uuid}', name: 'enterprises', requirements: ["uuid" => Requirement::UUID_V4], methods: ['GET'])]
+
+    #[Route('/enterprise/{uuid}', name: 'get_enterprise', requirements: ['uuid' => Requirement::UUID_V4], methods: ['GET'])]
+    #[OA\Get(
+        description: "Retrieve an enterprise by its UUID.",
+        summary: "Get enterprise by UUID"
+    )]
+    #[OA\Response(
+        response: 200,
+        description: "Returns the enterprise details.",
+        content: new OA\JsonContent(
+            properties: [
+                new OA\Property(property: "id", type: "integer"),
+                new OA\Property(property: "name", type: "string"),
+                new OA\Property(property: "uuid", type: "string")
+            ],
+            type: "object"
+        )
+    )]
+    #[OA\Response(
+        response: 404,
+        description: "Enterprise not found."
+    )]
+    #[OA\Tag(name: "Enterprise")]
     public function getEnterprises(string $uuid): JsonResponse
     {
         $enterprise = $this->enterpriseRepository->findOneBy(['uuid' => $uuid]);
@@ -60,45 +58,54 @@ class EnterpriseController extends AbstractController
         return $this->json($enterprise, 200, [], ['groups' => 'enterprise']);
     }
 
-    /**
-     * @OA\Post(
-     *   tags={"Enterprise"},
-     *   path="/api/enterprise",
-     *   summary="Create a new enterprise",
-     *   description="Create a new enterprise.",
-     *   @OA\RequestBody(
-     *     required=true,
-     *     @OA\JsonContent(
-     *       type="object",
-     *       required={"name"},
-     *       @OA\Property(property="name", type="string", description="The name of the enterprise")
-     *     )
-     *   ),
-     *   @OA\Response(
-     *     response=201,
-     *     description="Enterprise created successfully.",
-     *     @OA\JsonContent(
-     *       type="object",
-     *       @OA\Property(property="id", type="integer"),
-     *       @OA\Property(property="name", type="string"),
-     *       @OA\Property(property="uuid", type="string"),
-     *     )
-     *   )
-     * )
-     */
-    #[Route('/enterprise', name: 'create_enterprise', methods: ['POST'])]
+    #[Route('/api/enterprise', name: 'create_enterprise', methods: ['POST'])]
+    #[OA\Post(
+        description: "Create a new enterprise.",
+        summary: "Create a new enterprise"
+    )]
+    #[OA\RequestBody(
+        required: true,
+        content: new OA\JsonContent(
+            required: ["name"],
+            properties: [
+                new OA\Property(property: "name", description: "The name of the enterprise", type: "string"),
+                new OA\Property(property: "password", description: "The password of the enterprise", type: "string")
+            ],
+            type: "object"
+        )
+    )]
+    #[OA\Response(
+        response: 201,
+        description: "Enterprise created successfully.",
+        content: new OA\JsonContent(
+            properties: [
+                new OA\Property(property: "id", type: "integer"),
+                new OA\Property(property: "name", type: "string"),
+                new OA\Property(property: "uuid", type: "string")
+            ],
+            type: "object"
+        )
+    )]
+    #[OA\Tag(name: "Enterprise")]
+    #[Security(name: "Bearer")]
     public function createEnterprise(Request $request): JsonResponse
     {
-        $data = json_decode($request->getContent(), true);
+        try {
+            $data = json_decode($request->getContent(), true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException $e) {
+            echo 'Erreur de décodage JSON : ' . $e->getMessage();
+        }
 
-        if (!isset($data['name'])) {
+        if (!isset($data['name'],$data['password'])) {
             return $this->json(['message' => 'Missing required field: name'], 400);
         }
 
         $enterprise = new Enterprise();
         $enterprise->setName($data['name']);
+        $enterprise->setPassword($data['password']);
         $enterprise->setUuid(Uuid::uuid4()->toString());
         $enterprise->setCreatedAt(new \DateTime());
+        $enterprise->setRoles(["ROLE_ENTERPRISE"]);
 
         $this->entityManager->persist($enterprise);
         $this->entityManager->flush();
