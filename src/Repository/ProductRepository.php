@@ -20,7 +20,7 @@ class ProductRepository extends ServiceEntityRepository
     public function findAllProductsByEnterpriseId(int $enterpriseId): array
     {
         return $this->createQueryBuilder('p')
-            ->andWhere('p.Enterprise = :enterpriseId') // Utilisez le nom de la propriété en majuscule
+            ->andWhere('p.enterprise = :enterpriseId') // Utilisez le nom de la propriété en majuscule
             ->setParameter('enterpriseId', $enterpriseId)
             ->getQuery()
             ->getResult();
