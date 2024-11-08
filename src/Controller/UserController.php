@@ -5,13 +5,16 @@ namespace App\Controller;
 use App\Entity\User;
 use App\Repository\EnterpriseRepository;
 use App\Repository\UserRepository;
+use App\Service\CacheService;
+use App\Trait\FindEnterprise;
 use Doctrine\ORM\EntityManagerInterface;
+use JsonException;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\Routing\Annotation\Route;
-use OpenApi\Annotations as OA;
+use OpenApi\Attributes as OA;
 use Nelmio\ApiDocBundle\Annotation\Model;
 
 
@@ -21,42 +24,42 @@ use Nelmio\ApiDocBundle\Annotation\Model;
  */
 class UserController extends AbstractController
 {
-    private EnterpriseRepository $enterpriseRepository;
-    private UserRepository $userRepository;
-    private EntityManagerInterface $entityManager;
-    private UserPasswordHasherInterface $passwordHasher;
+    use FindEnterprise;
 
-    public function __construct(EnterpriseRepository $enterpriseRepository, UserRepository $userRepository, EntityManagerInterface $entityManager, UserPasswordHasherInterface $passwordHasher)
+    public function __construct(
+        private readonly EnterpriseRepository        $enterpriseRepository,
+        private readonly UserRepository              $userRepository,
+        private readonly EntityManagerInterface      $entityManager,
+        private readonly UserPasswordHasherInterface $passwordHasher,
+        private readonly CacheService                $cacheService,
+    )
     {
-        $this->enterpriseRepository = $enterpriseRepository;
-        $this->userRepository = $userRepository;
-        $this->entityManager = $entityManager;
-        $this->passwordHasher = $passwordHasher;
     }
-    /**
-     * @OA\Get(
-     *   tags={"User"},
-     *   path="/api/users/{uuid}",
-     *   summary="Get all users",
-     *   description="Retrieve a list of all users.",
-     *   @OA\Response(
-     *     response=200,
-     *     description="Returns a list of users.",
-     *     @OA\JsonContent(
-     *       type="array",
-     *       @OA\Items(
-     *         @OA\Property(property="id", type="integer"),
-     *         @OA\Property(property="username", type="string"),
-     *         @OA\Property(property="email", type="string")
-     *       )
-     *     )
-     *   )
-     * )
-     */
-    #[Route('/users/{uuid}', name: 'users', methods: ['GET'])]
+
+
+    #[Route('/api/users/{uuid}', name: 'users', methods: ['GET'])]
+    #[OA\Get(
+        description: "Retrieve a list of all users for a specific enterprise.",
+        summary: "Get all users"
+    )]
+    #[OA\Response(
+        response: 200,
+        description: "Returns a list of users.",
+        content: new OA\JsonContent(
+            type: "array",
+            items: new OA\Items(
+                properties: [
+                    new OA\Property(property: "id", type: "integer"),
+                    new OA\Property(property: "username", type: "string"),
+                    new OA\Property(property: "email", type: "string"),
+                ]
+            )
+        )
+    )]
+    #[OA\Tag(name: "User")]
     public function getUsers(string $uuid): JsonResponse
     {
-        $enterprise = $this->enterpriseRepository->findOneBy(['uuid' => $uuid]);
+        $enterprise = $this->findEnterpriseById($this->enterpriseRepository, $uuid); // Injection du repository
 
         if (!$enterprise) {
             return $this->json(['error' => 'Enterprise not found.'], 404);
@@ -76,51 +79,49 @@ class UserController extends AbstractController
             ];
         }
 
-        return $this->json($data);
+        $cache = $this->cacheService->getCache($uuid, $data);
+
+        return $this->json($cache);
     }
 
-    /**
-     * @OA\Get(
-     *   tags={"User"},
-     *   path="/api/user/{uuid}/{userId}",
-     *   summary="Get a specific user by enterprise UUID and user ID",
-     *   description="Retrieve a specific user for a given enterprise UUID and user ID.",
-     *   @OA\Parameter(
-     *     name="uuid",
-     *     in="path",
-     *     required=true,
-     *     description="The UUID of the enterprise.",
-     *     @OA\Schema(type="string")
-     *   ),
-     *   @OA\Parameter(
-     *     name="userId",
-     *     in="path",
-     *     required=true,
-     *     description="The ID of the user.",
-     *     @OA\Schema(type="integer")
-     *   ),
-     *   @OA\Response(
-     *     response=200,
-     *     description="Returns a specific user.",
-     *     @OA\JsonContent(
-     *       @OA\Property(property="id", type="integer"),
-     *       @OA\Property(property="email", type="string"),
-     *       @OA\Property(property="firstname", type="string"),
-     *       @OA\Property(property="lastname", type="string"),
-     *       @OA\Property(property="date_of_birth", type="string", format="date"),
-     *       @OA\Property(property="available", type="boolean")
-     *     )
-     *   ),
-     *   @OA\Response(
-     *     response=404,
-     *     description="User not found."
-     *   )
-     * )
-     */
-    #[Route('/user/{uuid}/{userId}', name: 'user', methods: ['GET'])]
+    #[Route('/api/user/{uuid}/{userId}', name: 'user', methods: ['GET'])]
+    #[OA\Get(
+        description: "Retrieve a specific user for a given enterprise UUID and user ID.",
+        summary: "Get a specific user by enterprise UUID and user ID"
+    )]
+    #[OA\Parameter(
+        name: "uuid",
+        description: "The UUID of the enterprise.",
+        in: "path",
+        required: true,
+        schema: new OA\Schema(type: "string")
+    )]
+    #[OA\Parameter(
+        name: "userId",
+        description: "The ID of the user.",
+        in: "path",
+        required: true,
+        schema: new OA\Schema(type: "integer")
+    )]
+    #[OA\Response(
+        response: 200,
+        description: "Returns a specific user.",
+        content: new OA\JsonContent(
+            properties: [
+                new OA\Property(property: "id", type: "integer"),
+                new OA\Property(property: "email", type: "string"),
+                new OA\Property(property: "firstname", type: "string"),
+                new OA\Property(property: "lastname", type: "string"),
+                new OA\Property(property: "date_of_birth", type: "string", format: "date"),
+                new OA\Property(property: "available", type: "boolean"),
+            ]
+        )
+    )]
+    #[OA\Response(response: 404, description: "User not found.")]
+    #[OA\Tag(name: "User")]
     public function getUserById(string $uuid, int $userId): JsonResponse
     {
-        $enterprise = $this->enterpriseRepository->findOneBy(['uuid' => $uuid]);
+        $enterprise = $this->findEnterpriseById($this->enterpriseRepository, $uuid);
 
         if (!$enterprise) {
             return $this->json(['error' => 'Enterprise not found.'], 404);
@@ -144,54 +145,68 @@ class UserController extends AbstractController
             'available' => $user->isAvailable(),
         ];
 
-        return $this->json($data);
+        $cache = $this->cacheService->getCache($uuid, $data);
+
+        return $this->json($cache);
     }
 
 
-    /**
-     * @OA\Post(
-     *   tags={"User"},
-     *   path="/api/users",
-     *   summary="Create a new user",
-     *   description="Create a new user.",
-     *   @OA\RequestBody(
-     *     required=true,
-     *     @OA\JsonContent(
-     *       type="object",
-     *       required={"firstname", "lastname", "email", "uuid", "password"}, // Champs requis
-     *       @OA\Property(property="uuid", type="string", description="UUID of the enterprise"),
-     *       @OA\Property(property="firstname", type="string", description="First name of the user"),
-     *       @OA\Property(property="lastname", type="string", description="Last name of the user"),
-     *       @OA\Property(property="email", type="string", description="Email of the user"),
-     *       @OA\Property(property="password", type="string", description="Password of the user"),
-     *       @OA\Property(property="available", type="boolean", description="Availability status of the user")
-     *     )
-     *   ),
-     *   @OA\Response(
-     *     response=201,
-     *     description="User created successfully.",
-     *     @OA\JsonContent(
-     *       type="object",
-     *       @OA\Property(property="id", type="integer", description="User ID"),
-     *       @OA\Property(property="firstname", type="string", description="First name of the user"),
-     *       @OA\Property(property="lastname", type="string", description="Last name of the user"),
-     *       @OA\Property(property="email", type="string", description="Email of the user")
-     *     )
-     *   )
-     * )
-     */
-    #[Route('/users', name: 'create_user', methods: ['POST'])]
-    public function createUser(Request $request): JsonResponse
+    #[Route('/api/users/{uuid}', name: 'create_user', methods: ['POST'])]
+    #[OA\Post(
+        description: "Create a new user associated with an enterprise.",
+        summary: "Create a new user"
+    )]
+    #[OA\Parameter(
+        name: "uuid",
+        description: "The UUID of the enterprise.",
+        in: "path",
+        required: true,
+        schema: new OA\Schema(type: "string")
+    )]
+    #[OA\RequestBody(
+        required: true,
+        content: new OA\JsonContent(
+            required: ["firstname", "lastname", "email", "uuid", "password"],
+            properties: [
+                new OA\Property(property: "firstname", description: "First name of the user", type: "string"),
+                new OA\Property(property: "lastname", description: "Last name of the user", type: "string"),
+                new OA\Property(property: "email", description: "Email of the user", type: "string"),
+                new OA\Property(property: "password", description: "Password of the user", type: "string"),
+                new OA\Property(property: "available", description: "Availability status of the user", type: "boolean"),
+            ],
+            type: "object"
+        )
+    )]
+    #[OA\Response(
+        response: 201,
+        description: "User created successfully.",
+        content: new OA\JsonContent(
+            properties: [
+                new OA\Property(property: "id", description: "User ID", type: "integer"),
+                new OA\Property(property: "firstname", description: "First name of the user", type: "string"),
+                new OA\Property(property: "lastname", description: "Last name of the user", type: "string"),
+                new OA\Property(property: "email", description: "Email of the user", type: "string"),
+            ],
+            type: "object"
+        )
+    )]
+    #[OA\Tag(name: "User")]
+    public function createUser(Request $request, string $uuid): JsonResponse
     {
-        $data = json_decode($request->getContent(), true);
+        $enterprise = $this->findEnterpriseById($this->enterpriseRepository, $uuid); // Injection du repository
 
-        if (!isset($data['firstname'], $data['email'], $data['uuid'])) {
-            return $this->json(['error' => 'Missing required fields.'], 400);
-        }
-
-        $enterprise = $this->enterpriseRepository->findOneBy(['uuid' => $data['uuid']]);
         if (!$enterprise) {
             return $this->json(['error' => 'Enterprise not found.'], 404);
+        }
+
+        try {
+            $data = json_decode($request->getContent(), true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException $e) {
+            echo 'Erreur de décodage JSON : ' . $e->getMessage();
+        }
+
+        if (!isset($data['firstname'], $data['email'], $data['password'])) {
+            return $this->json(['error' => 'Missing required fields.'], 400);
         }
 
         $user = new User();
@@ -208,6 +223,8 @@ class UserController extends AbstractController
         $this->entityManager->persist($user);
         $this->entityManager->flush();
 
+        $this->cacheService->clearCache($uuid);
+
         return $this->json([
             'id' => $user->getId(),
             'firstname' => $user->getFirstname(),
@@ -219,56 +236,54 @@ class UserController extends AbstractController
     }
 
 
-    /**
-     * @OA\Put(
-     *   tags={"User"},
-     *   path="/api/user/{uuid}/{userId}",
-     *   summary="Update a user",
-     *   description="Update the details of an existing user by enterprise UUID and user ID.",
-     *   @OA\Parameter(
-     *     name="uuid",
-     *     in="path",
-     *     required=true,
-     *     description="The UUID of the enterprise.",
-     *     @OA\Schema(type="string")
-     *   ),
-     *   @OA\Parameter(
-     *     name="userId",
-     *     in="path",
-     *     required=true,
-     *     description="The ID of the user",
-     *     @OA\Schema(type="integer")
-     *   ),
-     *   @OA\RequestBody(
-     *     required=true,
-     *     @OA\JsonContent(
-     *       type="object",
-     *       @OA\Property(property="firstname", type="string"),
-     *       @OA\Property(property="lastname", type="string"),
-     *       @OA\Property(property="email", type="string")
-     *     )
-     *   ),
-     *   @OA\Response(
-     *     response=200,
-     *     description="User updated successfully.",
-     *     @OA\JsonContent(
-     *       type="object",
-     *       @OA\Property(property="id", type="integer"),
-     *       @OA\Property(property="firstname", type="string"),
-     *       @OA\Property(property="lastname", type="string"),
-     *       @OA\Property(property="email", type="string")
-     *     )
-     *   ),
-     *   @OA\Response(
-     *     response=404,
-     *     description="User or enterprise not found."
-     *   )
-     * )
-     */
-    #[Route('/user/{uuid}/{userId}', name: 'update_user', methods: ['PUT'])]
+    #[Route('/api/user/{uuid}/{userId}', name: 'update_user', methods: ['PUT'])]
+    #[OA\Put(
+        description: "Update the details of an existing user by enterprise UUID and user ID.",
+        summary: "Update a user"
+    )]
+    #[OA\Parameter(
+        name: "uuid",
+        description: "The UUID of the enterprise.",
+        in: "path",
+        required: true,
+        schema: new OA\Schema(type: "string")
+    )]
+    #[OA\Parameter(
+        name: "userId",
+        description: "The ID of the user",
+        in: "path",
+        required: true,
+        schema: new OA\Schema(type: "integer")
+    )]
+    #[OA\RequestBody(
+        required: true,
+        content: new OA\JsonContent(
+            properties: [
+                new OA\Property(property: "firstname", type: "string"),
+                new OA\Property(property: "lastname", type: "string"),
+                new OA\Property(property: "email", type: "string"),
+                new OA\Property(property: "available", type: "boolean"),
+            ],
+            type: "object"
+        )
+    )]
+    #[OA\Response(
+        response: 200,
+        description: "User updated successfully.",
+        content: new OA\JsonContent(
+            properties: [
+                new OA\Property(property: "id", type: "integer"),
+                new OA\Property(property: "firstname", type: "string"),
+                new OA\Property(property: "lastname", type: "string"),
+                new OA\Property(property: "email", type: "string"),
+            ]
+        )
+    )]
+    #[OA\Response(response: 404, description: "User or enterprise not found.")]
+    #[OA\Tag(name: "User")]
     public function updateUser(string $uuid, int $userId, Request $request): JsonResponse
     {
-        $enterprise = $this->enterpriseRepository->findOneBy(['uuid' => $uuid]);
+        $enterprise = $this->findEnterpriseById($this->enterpriseRepository, $uuid);
 
         if (!$enterprise) {
             return $this->json(['error' => 'Enterprise not found.'], 404);
@@ -301,6 +316,8 @@ class UserController extends AbstractController
         $this->entityManager->persist($user);
         $this->entityManager->flush();
 
+        $this->cacheService->clearCache($uuid);
+
         $updatedData = [
             'id' => $user->getId(),
             'firstname' => $user->getFirstname(),
@@ -314,40 +331,31 @@ class UserController extends AbstractController
     }
 
 
-    /**
-     * @OA\Delete(
-     *   tags={"User"},
-     *   path="/api/user/{uuid}/{userId}",
-     *   summary="Delete a user",
-     *   description="Delete an existing user by enterprise UUID and user ID.",
-     *   @OA\Parameter(
-     *     name="uuid",
-     *     in="path",
-     *     required=true,
-     *     description="The UUID of the enterprise.",
-     *     @OA\Schema(type="string")
-     *   ),
-     *   @OA\Parameter(
-     *     name="userId",
-     *     in="path",
-     *     required=true,
-     *     description="The ID of the user",
-     *     @OA\Schema(type="integer")
-     *   ),
-     *   @OA\Response(
-     *     response=204,
-     *     description="User deleted successfully."
-     *   ),
-     *   @OA\Response(
-     *     response=404,
-     *     description="User or enterprise not found."
-     *   )
-     * )
-     */
-    #[Route('/user/{uuid}/{userId}', name: 'delete_user', methods: ['DELETE'])]
+    #[Route('/api/user/{uuid}/{userId}', name: 'delete_user', methods: ['DELETE'])]
+    #[OA\Delete(
+        description: "Delete an existing user by enterprise UUID and user ID.",
+        summary: "Delete a user"
+    )]
+    #[OA\Parameter(
+        name: "uuid",
+        description: "The UUID of the enterprise.",
+        in: "path",
+        required: true,
+        schema: new OA\Schema(type: "string")
+    )]
+    #[OA\Parameter(
+        name: "userId",
+        description: "The ID of the user",
+        in: "path",
+        required: true,
+        schema: new OA\Schema(type: "integer")
+    )]
+    #[OA\Response(response: 204, description: "User deleted successfully.")]
+    #[OA\Response(response: 404, description: "User or enterprise not found.")]
+    #[OA\Tag(name: "User")]
     public function deleteUser(string $uuid, int $userId): JsonResponse
     {
-        $enterprise = $this->enterpriseRepository->findOneBy(['uuid' => $uuid]);
+        $enterprise = $this->findEnterpriseById($this->enterpriseRepository, $uuid);
 
         if (!$enterprise) {
             return $this->json(['error' => 'Enterprise not found.'], 404);
@@ -364,6 +372,8 @@ class UserController extends AbstractController
 
         $this->entityManager->remove($user);
         $this->entityManager->flush();
+
+        $this->cacheService->clearCache($uuid);
 
         return $this->json(['message' => 'User deleted successfully.'], 200);
     }

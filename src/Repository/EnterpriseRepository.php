@@ -16,6 +16,17 @@ class EnterpriseRepository extends ServiceEntityRepository
         parent::__construct($registry, Enterprise::class);
     }
 
+    public function loadUserByUsernameAndUuid(string $name, string $uuid): ?Enterprise
+    {
+        return $this->createQueryBuilder('e')
+            ->where('e.name = :name')
+            ->andWhere('e.uuid = :uuid')
+            ->setParameter('name', $name)
+            ->setParameter('uuid', $uuid)
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
+
     //    /**
     //     * @return Enterprise[] Returns an array of Enterprise objects
     //     */
