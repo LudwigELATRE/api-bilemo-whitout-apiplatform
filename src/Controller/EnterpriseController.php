@@ -79,7 +79,6 @@ class EnterpriseController extends AbstractController
         description: "Enterprise created successfully.",
         content: new OA\JsonContent(
             properties: [
-                new OA\Property(property: "id", type: "integer"),
                 new OA\Property(property: "name", type: "string"),
                 new OA\Property(property: "uuid", type: "string")
             ],
