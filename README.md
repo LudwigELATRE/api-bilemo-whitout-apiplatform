@@ -111,11 +111,13 @@ Accédez à l'API via l'URL : `http://127.0.0.1:8000/api/doc`
 
 L'authentification est gérée via JWT. Voici les étapes pour obtenir un token :
 
-1. Envoyez une requête POST à `/api/login_check` avec les identifiants suivants :
+1. Aller sur l'api et crée une une entreprise grace a l'endpoint POST `/api/enterprise`. ON va vous fournir les information de votre entreprise.
+
+2. Envoyez une requête POST à `/api/login_check` avec les identifiants suivants :
 
    ```json
    {
-       "username": "nom entreprise",
+       "name": "nom entreprise",
        "password": "password"
    }
    ```
@@ -135,22 +137,6 @@ L'API respecte les trois niveaux du modèle de maturité de Richardson :
 1. **Niveau 1** : Organisation en ressources avec des endpoints clairs.
 2. **Niveau 2** : Utilisation des verbes HTTP appropriés (GET, POST, DELETE, etc.).
 3. **Niveau 3** : Hypermedia (HATEOAS) pour guider les clients dans l'utilisation de l'API.
-
----
-
-## Contribution
-
-Les contributions sont les bienvenues !
-
-1. Forkez le dépôt.
-2. Créez une branche pour votre fonctionnalité ou correctif :
-
-   ```bash
-   git checkout -b feature/ma-fonctionnalite
-   ```
-
-3. Faites vos modifications et testez-les.
-4. Soumettez une pull request pour examen.
 
 ---
 
