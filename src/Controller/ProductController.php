@@ -6,6 +6,7 @@ use App\Entity\Product;
 use App\Repository\EnterpriseRepository;
 use App\Repository\ProductRepository;
 use App\Service\CacheService;
+use App\Service\TokenUtils;
 use JsonException;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -27,16 +28,31 @@ class ProductController extends AbstractController
         private readonly EnterpriseRepository $enterpriseRepository,
         private readonly ProductRepository    $productRepository,
         private readonly CacheService         $cacheService,
-        private readonly EntityManagerInterface $entityManager
+        private readonly EntityManagerInterface $entityManager,
+        private readonly TokenUtils $tokenUtils,
     )
     {
     }
 
 
-    #[Route('/api/products/{uuid}', name: 'products', methods: ['GET'])]
+    #[Route('/products', name: 'products', methods: ['GET'])]
     #[OA\Get(
         description: "Retrieve a list of all products.",
         summary: "Get all products"
+    )]
+    #[OA\Parameter(
+        name: "page",
+        description: "The page number (default: 1).",
+        in: "query",
+        required: false,
+        schema: new OA\Schema(type: "integer", default: 1)
+    )]
+    #[OA\Parameter(
+        name: "limit",
+        description: "The number of items per page (default: 10).",
+        in: "query",
+        required: false,
+        schema: new OA\Schema(type: "integer", default: 5)
     )]
     #[OA\Response(
         response: 200,
@@ -53,47 +69,60 @@ class ProductController extends AbstractController
         )
     )]
     #[OA\Tag(name: "Product")]
-    public function getProducts(string $uuid): JsonResponse
+    public function getProducts(Request $request): JsonResponse
     {
+        try {
+            $uuid = $this->tokenUtils->getUuidFromToken($request);
+        } catch (\InvalidArgumentException $e) {
+            return new JsonResponse(['error' => $e->getMessage()], 401);
+        }
+
         $enterprise = $this->enterpriseRepository->findOneBy(['uuid' => $uuid]);
 
         if (!$enterprise) {
             return $this->json(['error' => 'Enterprise not found.'], 404);
         }
 
-        $products = $this->productRepository->findAllProductsByEnterpriseId($enterprise->getId());
+        $page = (int) $request->query->get('page', 1);
+        $limit = (int) $request->query->get('limit', 10);
+
+        $totalProducts = $this->productRepository->countProductsByEnterpriseId($enterprise->getId());
+        $products = $this->productRepository->findAllProductsByEnterpriseId($enterprise->getId(), $page, $limit);
 
         $data = [];
         foreach ($products as $product) {
             $data[] = [
                 'id' => $product->getId(),
                 'name' => $product->getName(),
-                'Description' => $product->getDescription(),
+                'description' => $product->getDescription(),
                 'createdAt' => $product->getCreatedAt(),
                 'updatedAt' => $product->getUpdatedAt(),
-                'available' => $product->IsAvailable(),
+                'available' => $product->isAvailable(),
             ];
         }
 
+        $totalPages = ceil($totalProducts / $limit);
+
         $cache = $this->cacheService->getCache($uuid, $data);
 
-        return $this->json($cache);
+        return $this->json([
+            'products' => $cache,
+            'pagination' => [
+                'total' => $totalProducts,
+                'page' => $page,
+                'limit' => $limit,
+                'totalPages' => $totalPages,
+            ],
+        ]);
     }
 
-    #[Route('/api/product/{uuid}/{productId}', name: 'product', methods: ['GET'])]
+    #[Route('/product/{id}', name: 'product', methods: ['GET'])]
     #[OA\Get(
         description: "Retrieve a specific product for a given enterprise UUID and product ID.",
         summary: "Get a specific product by enterprise UUID and product ID"
     )]
     #[OA\Parameter(
-        name: "uuid",
-        description: "The UUID of the enterprise.",
-        in: "path",
-        required: true,
-        schema: new OA\Schema(type: "string")
-    )]
-    #[OA\Parameter(
-        name: "productId",
+        name: "id",
         description: "The ID of the product.",
         in: "path",
         required: true,
@@ -118,15 +147,21 @@ class ProductController extends AbstractController
         description: "Product not found."
     )]
     #[OA\Tag(name: "Product")]
-    public function getProduct(string $uuid, int $productId): JsonResponse
+    public function getProduct(int $id, Request $request): JsonResponse
     {
+        try {
+            $uuid = $this->tokenUtils->getUuidFromToken($request);
+        } catch (\InvalidArgumentException $e) {
+            return new JsonResponse(['error' => $e->getMessage()], 401);
+        }
+
         $enterprise = $this->enterpriseRepository->findOneBy(['uuid' => $uuid]);
         if (!$enterprise) {
             return $this->json(['error' => 'Enterprise not found.'], 404);
         }
 
         $product = $this->productRepository->findOneBy([
-            'id' => $productId,
+            'id' => $id,
             'enterprise' => $enterprise->getId(),
         ]);
 
@@ -143,23 +178,14 @@ class ProductController extends AbstractController
             'available' => $product->isAvailable(),
         ];
 
-        $cache = $this->cacheService->getCache($uuid, $data);
-
-        return $this->json($cache);
+        return $this->json($data);
     }
 
 
-    #[Route('/api/products/enregistrer/{uuid}', name: 'create_product', methods: ['POST'])]
+    #[Route('/product', name: 'create_product', methods: ['POST'])]
     #[OA\Post(
         description: "Create a new product.",
         summary: "Create a new product"
-    )]
-    #[OA\Parameter(
-        name: "uuid",
-        description: "The UUID of the enterprise.",
-        in: "path",
-        required: true,
-        schema: new OA\Schema(type: "string")
     )]
     #[OA\RequestBody(
         required: true,
@@ -186,8 +212,14 @@ class ProductController extends AbstractController
         )
     )]
     #[OA\Tag(name: "Product")]
-    public function createProduct(Request $request,string $uuid): JsonResponse
+    public function createProduct(Request $request): JsonResponse
     {
+        try {
+            $uuid = $this->tokenUtils->getUuidFromToken($request);
+        } catch (\InvalidArgumentException $e) {
+            return new JsonResponse(['error' => $e->getMessage()], 401);
+        }
+
         $enterprise = $this->enterpriseRepository->findOneBy(['uuid' => $uuid]);
         if (!$enterprise) {
             return $this->json(['error' => 'Enterprise not found.'], 404);
@@ -213,7 +245,7 @@ class ProductController extends AbstractController
         $this->entityManager->persist($product);
         $this->entityManager->flush();
 
-        $this->cacheService->clearCache($uuid);
+        $this->cacheService->clearCache("product");
 
         $responseData = [
             'id' => $product->getId(),
