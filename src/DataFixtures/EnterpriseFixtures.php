@@ -15,6 +15,8 @@ class EnterpriseFixtures extends Fixture implements OrderedFixtureInterface
         for ($i = 0; $i < 10; $i++) {
             $enterprise = new Enterprise();
             $enterprise->setName('Enterprise ' . $i);
+            $enterprise->setPassword('password');
+            //$enterprise->setRoles('[ROLE_ENTERPRISE]');
             $enterprise->setUuid(Uuid::uuid4()->toString());
             $enterprise->setCreatedAt(new \DateTime());
             $manager->persist($enterprise);

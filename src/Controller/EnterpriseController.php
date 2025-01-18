@@ -4,8 +4,10 @@ namespace App\Controller;
 
 use App\Entity\Enterprise;
 use App\Repository\EnterpriseRepository;
+use App\Service\TokenUtils;
 use Doctrine\ORM\EntityManagerInterface;
 use JsonException;
+use Lexik\Bundle\JWTAuthenticationBundle\Services\JWTTokenManagerInterface;
 use Ramsey\Uuid\Uuid;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -18,21 +20,18 @@ use Symfony\Component\Routing\Requirement\Requirement;
 
 class EnterpriseController extends AbstractController
 {
-    private EnterpriseRepository $enterpriseRepository;
-    private EntityManagerInterface $entityManager;
-
-    public function __construct(EnterpriseRepository $enterpriseRepository, EntityManagerInterface $entityManager)
+    public function __construct(
+        private readonly EnterpriseRepository $enterpriseRepository,
+        private readonly EntityManagerInterface $entityManager,
+        private readonly TokenUtils $tokenUtils)
     {
-        $this->enterpriseRepository = $enterpriseRepository;
-        $this->entityManager = $entityManager;
-
     }
 
 
-    #[Route('/enterprise/{uuid}', name: 'get_enterprise', requirements: ['uuid' => Requirement::UUID_V4], methods: ['GET'])]
+    #[Route('/enterprise', name: 'get_enterprise', methods: ['GET'])]
     #[OA\Get(
-        description: "Retrieve an enterprise by its UUID.",
-        summary: "Get enterprise by UUID"
+        description: "Retrieve an enterprise.",
+        summary: "Get enterprise"
     )]
     #[OA\Response(
         response: 200,
@@ -47,18 +46,28 @@ class EnterpriseController extends AbstractController
         )
     )]
     #[OA\Response(
+        response: 401,
+        description: "Unauthorized access or invalid token."
+    )]
+    #[OA\Response(
         response: 404,
         description: "Enterprise not found."
     )]
     #[OA\Tag(name: "Enterprise")]
-    public function getEnterprises(string $uuid): JsonResponse
+    public function getEnterprises(Request $request): JsonResponse
     {
+        try {
+            $uuid = $this->tokenUtils->getUuidFromToken($request);
+        } catch (\InvalidArgumentException $e) {
+            return new JsonResponse(['error' => $e->getMessage()], 401);
+        }
+
         $enterprise = $this->enterpriseRepository->findOneBy(['uuid' => $uuid]);
 
         return $this->json($enterprise, 200, [], ['groups' => 'enterprise']);
     }
 
-    #[Route('/api/enterprise', name: 'create_enterprise', methods: ['POST'])]
+    #[Route('/enterprise', name: 'create_enterprise', methods: ['POST'])]
     #[OA\Post(
         description: "Create a new enterprise.",
         summary: "Create a new enterprise"
@@ -86,7 +95,6 @@ class EnterpriseController extends AbstractController
         )
     )]
     #[OA\Tag(name: "Enterprise")]
-    #[Security(name: "Bearer")]
     public function createEnterprise(Request $request): JsonResponse
     {
         try {

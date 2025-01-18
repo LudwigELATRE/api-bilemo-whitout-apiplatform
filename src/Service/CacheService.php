@@ -16,10 +16,11 @@ class CacheService
     public function getCache(string $cacheName, $data): array
     {
         $idCache = $cacheName;
-        return $this->cache->get($idCache, function (ItemInterface $item) use ($data) {
+        return $data;
+/*        return $this->cache->get($idCache, function (ItemInterface $item) use ($data) {
             $item->tag('cache');
             return $data;
-        });
+        });*/
     }
 
     public function clearCache(string $cacheName): void

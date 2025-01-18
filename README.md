@@ -75,8 +75,19 @@ Seuls les clients authentifiés peuvent accéder à l'API.
    ```bash
    composer install
    ```
+3. lancer le container docker pour obtenir la base de données :
 
-3. Configurez les variables d'environnement :
+   ```bash
+   docker-compose up
+   ```
+
+4. Lancez le serveur local :
+
+   ```bash
+   symfony server:start
+   ```
+   
+5. Configurez les variables d'environnement :
 
    Créez un fichier `.env.local` et ajoutez vos paramètres :
 
@@ -86,19 +97,13 @@ Seuls les clients authentifiés peuvent accéder à l'API.
    JWT_PUBLIC_KEY="%kernel.project_dir%/config/jwt/public.pem"
    JWT_PASSPHRASE="votre_passphrase"
    ```
-
-4. Initialisez la base de données :
-
-   ```bash
-   php bin/console doctrine:database:create
-   php bin/console doctrine:migrations:migrate
-   php bin/console doctrine:fixtures:load
-   ```
-
-6. Lancez le serveur local :
+   
+6. Initialisez la base de données :
 
    ```bash
-   symfony server:start
+   make db-create
+   make db-update
+   make db-fixtures
    ```
 
 ### Utilisation
@@ -115,7 +120,7 @@ L'authentification est gérée via JWT. Voici les étapes pour obtenir un token 
 
    ```json
    {
-       "username": "nom entreprise",
+       "username": "name",
        "password": "password"
    }
    ```
@@ -135,22 +140,6 @@ L'API respecte les trois niveaux du modèle de maturité de Richardson :
 1. **Niveau 1** : Organisation en ressources avec des endpoints clairs.
 2. **Niveau 2** : Utilisation des verbes HTTP appropriés (GET, POST, DELETE, etc.).
 3. **Niveau 3** : Hypermedia (HATEOAS) pour guider les clients dans l'utilisation de l'API.
-
----
-
-## Contribution
-
-Les contributions sont les bienvenues !
-
-1. Forkez le dépôt.
-2. Créez une branche pour votre fonctionnalité ou correctif :
-
-   ```bash
-   git checkout -b feature/ma-fonctionnalite
-   ```
-
-3. Faites vos modifications et testez-les.
-4. Soumettez une pull request pour examen.
 
 ---
 

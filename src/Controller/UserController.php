@@ -6,6 +6,7 @@ use App\Entity\User;
 use App\Repository\EnterpriseRepository;
 use App\Repository\UserRepository;
 use App\Service\CacheService;
+use App\Service\TokenUtils;
 use App\Trait\FindEnterprise;
 use Doctrine\ORM\EntityManagerInterface;
 use JsonException;
@@ -26,21 +27,38 @@ class UserController extends AbstractController
 {
     use FindEnterprise;
 
+    public $cachename = "user";
+
     public function __construct(
         private readonly EnterpriseRepository        $enterpriseRepository,
         private readonly UserRepository              $userRepository,
         private readonly EntityManagerInterface      $entityManager,
         private readonly UserPasswordHasherInterface $passwordHasher,
         private readonly CacheService                $cacheService,
+        private readonly TokenUtils                  $tokenUtils
     )
     {
     }
 
 
-    #[Route('/api/users/{uuid}', name: 'users', methods: ['GET'])]
+    #[Route('/users', name: 'users', methods: ['GET'])]
     #[OA\Get(
         description: "Retrieve a list of all users for a specific enterprise.",
         summary: "Get all users"
+    )]
+    #[OA\Parameter(
+        name: "page",
+        description: "The page number (default: 1).",
+        in: "query",
+        required: false,
+        schema: new OA\Schema(type: "integer", default: 1)
+    )]
+    #[OA\Parameter(
+        name: "limit",
+        description: "The number of items per page (default: 10).",
+        in: "query",
+        required: false,
+        schema: new OA\Schema(type: "integer", default: 5)
     )]
     #[OA\Response(
         response: 200,
@@ -57,15 +75,25 @@ class UserController extends AbstractController
         )
     )]
     #[OA\Tag(name: "User")]
-    public function getUsers(string $uuid): JsonResponse
+    public function getUsers(Request $request): JsonResponse
     {
-        $enterprise = $this->findEnterpriseById($this->enterpriseRepository, $uuid); // Injection du repository
+        try {
+            $uuid = $this->tokenUtils->getUuidFromToken($request);
+        } catch (\InvalidArgumentException $e) {
+            return new JsonResponse(['error' => $e->getMessage()], 401);
+        }
+
+        $enterprise = $this->findEnterpriseById($this->enterpriseRepository, $uuid);
 
         if (!$enterprise) {
             return $this->json(['error' => 'Enterprise not found.'], 404);
         }
 
-        $users = $this->userRepository->findAllUsersByEnterpriseId($enterprise->getId());
+        $page = (int) $request->query->get('page', 1);
+        $limit = (int) $request->query->get('limit', 5);
+
+        $totalProducts = $this->userRepository->countProductsByEnterpriseId($enterprise->getId());
+        $users = $this->userRepository->findAllUsersByEnterpriseId($enterprise->getId(), $page, $limit);
 
         $data = [];
         foreach ($users as $user) {
@@ -79,25 +107,28 @@ class UserController extends AbstractController
             ];
         }
 
-        $cache = $this->cacheService->getCache($uuid, $data);
+        $totalPages = ceil($totalProducts / $limit);
 
-        return $this->json($cache);
+        $cache = $this->cacheService->getCache($this->cachename, $data);
+
+        return $this->json([
+            'products' => $cache,
+            'pagination' => [
+                'total' => $totalProducts,
+                'page' => $page,
+                'limit' => $limit,
+                'totalPages' => $totalPages,
+            ],
+        ]);
     }
 
-    #[Route('/api/user/{uuid}/{userId}', name: 'user', methods: ['GET'])]
+    #[Route('/user/{id}', name: 'user', methods: ['GET'])]
     #[OA\Get(
         description: "Retrieve a specific user for a given enterprise UUID and user ID.",
         summary: "Get a specific user by enterprise UUID and user ID"
     )]
     #[OA\Parameter(
-        name: "uuid",
-        description: "The UUID of the enterprise.",
-        in: "path",
-        required: true,
-        schema: new OA\Schema(type: "string")
-    )]
-    #[OA\Parameter(
-        name: "userId",
+        name: "id",
         description: "The ID of the user.",
         in: "path",
         required: true,
@@ -119,8 +150,14 @@ class UserController extends AbstractController
     )]
     #[OA\Response(response: 404, description: "User not found.")]
     #[OA\Tag(name: "User")]
-    public function getUserById(string $uuid, int $userId): JsonResponse
+    public function getUserById(int $id, Request $request): JsonResponse
     {
+        try {
+            $uuid = $this->tokenUtils->getUuidFromToken($request);
+        } catch (\InvalidArgumentException $e) {
+            return new JsonResponse(['error' => $e->getMessage()], 401);
+        }
+
         $enterprise = $this->findEnterpriseById($this->enterpriseRepository, $uuid);
 
         if (!$enterprise) {
@@ -128,7 +165,7 @@ class UserController extends AbstractController
         }
 
         $user = $this->userRepository->findOneBy([
-            'id' => $userId,
+            'id' => $id,
             'enterprise' => $enterprise->getId(),
         ]);
 
@@ -145,23 +182,14 @@ class UserController extends AbstractController
             'available' => $user->isAvailable(),
         ];
 
-        $cache = $this->cacheService->getCache($uuid, $data);
-
-        return $this->json($cache);
+        return $this->json($data);
     }
 
 
-    #[Route('/api/users/{uuid}', name: 'create_user', methods: ['POST'])]
+    #[Route('/user', name: 'create_user', methods: ['POST'])]
     #[OA\Post(
         description: "Create a new user associated with an enterprise.",
         summary: "Create a new user"
-    )]
-    #[OA\Parameter(
-        name: "uuid",
-        description: "The UUID of the enterprise.",
-        in: "path",
-        required: true,
-        schema: new OA\Schema(type: "string")
     )]
     #[OA\RequestBody(
         required: true,
@@ -191,8 +219,14 @@ class UserController extends AbstractController
         )
     )]
     #[OA\Tag(name: "User")]
-    public function createUser(Request $request, string $uuid): JsonResponse
+    public function createUser(Request $request): JsonResponse
     {
+        try {
+            $uuid = $this->tokenUtils->getUuidFromToken($request);
+        } catch (\InvalidArgumentException $e) {
+            return new JsonResponse(['error' => $e->getMessage()], 401);
+        }
+
         $enterprise = $this->findEnterpriseById($this->enterpriseRepository, $uuid); // Injection du repository
 
         if (!$enterprise) {
@@ -223,7 +257,7 @@ class UserController extends AbstractController
         $this->entityManager->persist($user);
         $this->entityManager->flush();
 
-        $this->cacheService->clearCache($uuid);
+        $this->cacheService->clearCache($this->cachename);
 
         return $this->json([
             'id' => $user->getId(),
@@ -236,20 +270,13 @@ class UserController extends AbstractController
     }
 
 
-    #[Route('/api/user/{uuid}/{userId}', name: 'update_user', methods: ['PUT'])]
+    #[Route('/user/{id}', name: 'update_user', methods: ['PUT'])]
     #[OA\Put(
         description: "Update the details of an existing user by enterprise UUID and user ID.",
         summary: "Update a user"
     )]
     #[OA\Parameter(
-        name: "uuid",
-        description: "The UUID of the enterprise.",
-        in: "path",
-        required: true,
-        schema: new OA\Schema(type: "string")
-    )]
-    #[OA\Parameter(
-        name: "userId",
+        name: "id",
         description: "The ID of the user",
         in: "path",
         required: true,
@@ -281,8 +308,14 @@ class UserController extends AbstractController
     )]
     #[OA\Response(response: 404, description: "User or enterprise not found.")]
     #[OA\Tag(name: "User")]
-    public function updateUser(string $uuid, int $userId, Request $request): JsonResponse
+    public function updateUser(int $id, Request $request): JsonResponse
     {
+        try {
+            $uuid = $this->tokenUtils->getUuidFromToken($request);
+        } catch (\InvalidArgumentException $e) {
+            return new JsonResponse(['error' => $e->getMessage()], 401);
+        }
+
         $enterprise = $this->findEnterpriseById($this->enterpriseRepository, $uuid);
 
         if (!$enterprise) {
@@ -290,7 +323,7 @@ class UserController extends AbstractController
         }
 
         $user = $this->userRepository->findOneBy([
-            'id' => $userId,
+            'id' => $id,
             'enterprise' => $enterprise->getId(),
         ]);
 
@@ -316,7 +349,7 @@ class UserController extends AbstractController
         $this->entityManager->persist($user);
         $this->entityManager->flush();
 
-        $this->cacheService->clearCache($uuid);
+        $this->cacheService->clearCache($this->cachename);
 
         $updatedData = [
             'id' => $user->getId(),
@@ -331,20 +364,13 @@ class UserController extends AbstractController
     }
 
 
-    #[Route('/api/user/{uuid}/{userId}', name: 'delete_user', methods: ['DELETE'])]
+    #[Route('/user/{id}', name: 'delete_user', methods: ['DELETE'])]
     #[OA\Delete(
         description: "Delete an existing user by enterprise UUID and user ID.",
         summary: "Delete a user"
     )]
     #[OA\Parameter(
-        name: "uuid",
-        description: "The UUID of the enterprise.",
-        in: "path",
-        required: true,
-        schema: new OA\Schema(type: "string")
-    )]
-    #[OA\Parameter(
-        name: "userId",
+        name: "id",
         description: "The ID of the user",
         in: "path",
         required: true,
@@ -353,8 +379,14 @@ class UserController extends AbstractController
     #[OA\Response(response: 204, description: "User deleted successfully.")]
     #[OA\Response(response: 404, description: "User or enterprise not found.")]
     #[OA\Tag(name: "User")]
-    public function deleteUser(string $uuid, int $userId): JsonResponse
+    public function deleteUser(int $id, Request $request): JsonResponse
     {
+        try {
+            $uuid = $this->tokenUtils->getUuidFromToken($request);
+        } catch (\InvalidArgumentException $e) {
+            return new JsonResponse(['error' => $e->getMessage()], 401);
+        }
+
         $enterprise = $this->findEnterpriseById($this->enterpriseRepository, $uuid);
 
         if (!$enterprise) {
@@ -362,7 +394,7 @@ class UserController extends AbstractController
         }
 
         $user = $this->userRepository->findOneBy([
-            'id' => $userId,
+            'id' => $id,
             'enterprise' => $enterprise->getId(),
         ]);
 
@@ -373,7 +405,7 @@ class UserController extends AbstractController
         $this->entityManager->remove($user);
         $this->entityManager->flush();
 
-        $this->cacheService->clearCache($uuid);
+        $this->cacheService->clearCache($this->cachename);
 
         return $this->json(['message' => 'User deleted successfully.'], 200);
     }

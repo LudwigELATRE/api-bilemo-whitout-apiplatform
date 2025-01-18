@@ -17,37 +17,26 @@ class ProductRepository extends ServiceEntityRepository
         parent::__construct($registry, Product::class);
     }
 
-    public function findAllProductsByEnterpriseId(int $enterpriseId): array
+    public function findAllProductsByEnterpriseId(int $enterpriseId, int $page = 1, int $limit = 10): array
     {
+        $offset = ($page - 1) * $limit;
+
         return $this->createQueryBuilder('p')
-            ->andWhere('p.enterprise = :enterpriseId') // Utilisez le nom de la propriété en majuscule
+            ->andWhere('p.enterprise = :enterpriseId')
             ->setParameter('enterpriseId', $enterpriseId)
+            ->setFirstResult($offset)
+            ->setMaxResults($limit)
             ->getQuery()
             ->getResult();
     }
 
-    //    /**
-    //     * @return Product[] Returns an array of Product objects
-    //     */
-    //    public function findByExampleField($value): array
-    //    {
-    //        return $this->createQueryBuilder('p')
-    //            ->andWhere('p.exampleField = :val')
-    //            ->setParameter('val', $value)
-    //            ->orderBy('p.id', 'ASC')
-    //            ->setMaxResults(10)
-    //            ->getQuery()
-    //            ->getResult()
-    //        ;
-    //    }
-
-    //    public function findOneBySomeField($value): ?Product
-    //    {
-    //        return $this->createQueryBuilder('p')
-    //            ->andWhere('p.exampleField = :val')
-    //            ->setParameter('val', $value)
-    //            ->getQuery()
-    //            ->getOneOrNullResult()
-    //        ;
-    //    }
+    public function countProductsByEnterpriseId(int $enterpriseId): int
+    {
+        return (int) $this->createQueryBuilder('p')
+            ->select('COUNT(p.id)')
+            ->andWhere('p.enterprise = :enterpriseId')
+            ->setParameter('enterpriseId', $enterpriseId)
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
 }
